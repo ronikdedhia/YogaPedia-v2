@@ -1,0 +1,809 @@
+:root {
+  --ink: #f5f6fa;
+  --muted: rgba(245, 246, 250, 0.68);
+  --line: rgba(255, 255, 255, 0.18);
+  --surface: rgba(255, 255, 255, 0.08);
+  --surface-strong: rgba(255, 255, 255, 0.14);
+  --accent: #a78bfa;
+  --accent-strong: #8b5cf6;
+  --accent-soft: rgba(167, 139, 250, 0.22);
+  --good: #34d399;
+  --good-bg: rgba(52, 211, 153, 0.16);
+  --bad: #f87171;
+  --bad-bg: rgba(248, 113, 113, 0.16);
+  --glass-blur: blur(20px) saturate(180%);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.37), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--ink);
+  /* Deliberate fixed dark gradient + colorful glows — glassmorphism needs a busy,
+     colorful backdrop to actually read as "glass"; a plain light/dark toggle would
+     just look flat, so this commits to one look rather than theming light/dark. */
+  background:
+    radial-gradient(circle at 15% 20%, rgba(139, 92, 246, 0.38), transparent 42%),
+    radial-gradient(circle at 85% 10%, rgba(6, 182, 212, 0.32), transparent 42%),
+    radial-gradient(circle at 60% 85%, rgba(236, 72, 153, 0.26), transparent 48%),
+    radial-gradient(circle at 10% 90%, rgba(52, 211, 153, 0.2), transparent 40%),
+    linear-gradient(135deg, #0f0c29 0%, #1a1a3e 50%, #0f2027 100%);
+  background-attachment: fixed;
+  font-family: 'Segoe UI', system-ui, sans-serif;
+}
+
+.app-navbar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  /* Solid-ish gradient bar (vs. the translucent glass cards used everywhere else in the
+     app) plus a bottom accent line and drop shadow — reads as a distinct toolbar sitting
+     above the page instead of blending into the same glassmorphic surface as content. */
+  background: linear-gradient(90deg, rgba(20, 14, 46, 0.96), rgba(12, 22, 40, 0.96));
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border-bottom: 2px solid var(--accent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+}
+
+.app-navbar__inner {
+  width: 100%;
+  margin: 0 auto;
+  padding: 0.6rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.app-navbar__brand {
+  font-weight: 800;
+  font-size: 1.05rem;
+  white-space: nowrap;
+}
+
+.app-navbar__links {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: nowrap;
+  flex: 1;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.app-navbar__links .pose-check__btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.app-navbar__right {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-shrink: 0;
+}
+
+.app {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 3rem;
+  text-align: center;
+}
+
+.app h1 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  margin-bottom: 0.4rem;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+}
+
+.app__subtitle {
+  color: var(--muted);
+  margin-bottom: 1.75rem;
+  font-size: 0.95rem;
+}
+
+.app__auth-note {
+  margin-top: 2rem;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* --- Glass panel base, reused by every card-like surface --- */
+.pose-check,
+.yoga-plan,
+.consent-modal,
+.progress-card {
+  background: var(--surface);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  padding: 1.5rem;
+  box-shadow: var(--glass-shadow);
+}
+
+.yoga-plan,
+.consent-modal {
+  text-align: left;
+}
+
+.consent-modal__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 6, 10, 0.55);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 50;
+}
+
+.consent-modal {
+  max-width: 440px;
+  width: 100%;
+}
+
+.consent-modal h3 {
+  margin: 0 0 0.75rem;
+}
+
+.consent-modal p {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.consent-modal ul {
+  margin: 0 0 1rem;
+  padding-left: 1.1rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.consent-modal ul li {
+  margin-bottom: 0.4rem;
+}
+
+.consent-modal__actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+
+.pose-check__unlock-banner {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 14px;
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+  backdrop-filter: blur(8px);
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pose-check__unlock-banner:hover {
+  background: rgba(167, 139, 250, 0.3);
+}
+
+.pose-check__controls {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.pose-check__btn {
+  padding: 0.55rem 1.1rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  backdrop-filter: blur(10px);
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.pose-check__btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.pose-check__btn.is-active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: #fff;
+}
+
+.pose-check__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pose-check__threshold {
+  max-width: 380px;
+  margin: 0 auto 1rem;
+  font-size: 0.85rem;
+}
+
+.pose-check__threshold input[type='range'] {
+  width: 100%;
+  margin: 0.4rem 0;
+}
+
+.pose-check__threshold-hint {
+  color: var(--muted);
+  font-size: 0.75rem;
+  margin: 0;
+}
+
+.pose-check__picker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.pose-check__picker select,
+.yoga-plan select {
+  padding: 0.4rem 0.6rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-size: 0.85rem;
+}
+
+.pose-check__picker select option,
+.yoga-plan select option {
+  background: #1a1a3e;
+  color: var(--ink);
+}
+
+.pose-check__practice-area {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.pose-check__practice-area > * {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+.pose-check__gif-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 4 / 3;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--line);
+  padding: 0.5rem;
+}
+
+.pose-check__gif-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border-radius: 10px;
+}
+
+.pose-check__gif-note {
+  color: rgba(245, 246, 250, 0.6);
+  font-size: 0.72rem;
+  margin: 0.4rem 0 0;
+  text-align: center;
+}
+
+.pose-check__gif-placeholder {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 1rem;
+}
+
+.pose-check__video-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.5);
+  border: 1px solid var(--line);
+}
+
+.pose-check__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transform: scaleX(-1); /* mirror, like a real mirror/old app's cv2.flip */
+}
+
+.pose-check__overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  font-size: 0.9rem;
+}
+
+.pose-check__overlay--static {
+  position: static;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+}
+
+.pose-check__timer {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.pose-check__timer.is-complete {
+  background: rgba(52, 211, 153, 0.35);
+  border-color: var(--good);
+}
+
+.pose-check__error {
+  color: var(--bad);
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.pose-check__result {
+  margin-top: 1.25rem;
+  padding: 1.1rem 1.25rem;
+  border-radius: 16px;
+  text-align: left;
+  backdrop-filter: blur(12px);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.pose-check__result.is-good {
+  background: var(--good-bg);
+  border: 1px solid var(--good);
+}
+
+.pose-check__result.is-bad {
+  background: var(--bad-bg);
+  border: 1px solid var(--bad);
+}
+
+.pose-check__result-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.4rem;
+}
+
+.pose-check__badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #0f0c29;
+}
+
+.pose-check__badge.is-good {
+  background: var(--good);
+}
+
+.pose-check__badge.is-bad {
+  background: var(--bad);
+  color: #fff;
+}
+
+.pose-check__confidence {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.pose-check__pose-name {
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.pose-check__correction {
+  margin-top: 0.5rem;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.yoga-plan__form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.yoga-plan__label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  margin-top: 0.6rem;
+}
+
+.yoga-plan__textarea {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+.yoga-plan__textarea::placeholder {
+  color: var(--muted);
+}
+
+.issue-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.issue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 0.4rem 0.3rem 0.75rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  font-size: 0.85rem;
+}
+
+.issue-chip__remove {
+  border: none;
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--ink);
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.issue-chip__remove:hover {
+  background: var(--bad);
+}
+
+.yoga-plan__flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin: 0.75rem 0;
+  font-size: 0.85rem;
+}
+
+.yoga-plan__flag {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.yoga-plan__submit {
+  align-self: flex-start;
+  margin-top: 0.5rem;
+  padding: 0.65rem 1.4rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: linear-gradient(135deg, var(--accent-strong), #ec4899);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4);
+}
+
+.yoga-plan__submit:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.yoga-plan__submit:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.yoga-plan__result {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--line);
+}
+
+.yoga-plan__title {
+  margin: 0 0 0.75rem;
+}
+
+.yoga-plan__routine {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.yoga-plan__step {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 0.75rem 1rem;
+}
+
+.yoga-plan__step-top {
+  display: flex;
+  justify-content: space-between;
+  font-weight: 700;
+}
+
+.yoga-plan__step-duration {
+  color: var(--muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.yoga-plan__step-why {
+  margin: 0.3rem 0 0;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+.yoga-plan__section {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.yoga-plan__section h4 {
+  margin: 0 0 0.4rem;
+}
+
+.yoga-plan__section ul {
+  margin: 0;
+  padding-left: 1.1rem;
+}
+
+.yoga-plan__section--caution {
+  color: #fbbf24;
+}
+
+/* Water/walk completion — deliberately NOT another plain .yoga-plan__flag row like
+   pranayama; these get their own tinted, bordered card so they read as a distinct
+   checklist instead of blending into the surrounding note/textarea text. */
+.wellness-card {
+  margin: 1rem 0;
+  padding: 0.9rem 1.1rem;
+  border-radius: 16px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  box-shadow: 0 4px 20px rgba(139, 92, 246, 0.18);
+}
+
+.wellness-card h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.9rem;
+  color: var(--ink);
+}
+
+.wellness-card__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.55rem 0;
+}
+
+.wellness-card__item + .wellness-card__item {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.wellness-card__info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+}
+
+.wellness-card__icon {
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.wellness-card__toggle {
+  padding: 0.4rem 0.9rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 0.78rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.wellness-card__toggle:hover {
+  transform: translateY(-1px);
+}
+
+.wellness-card__toggle.is-done {
+  background: var(--good-bg);
+  border-color: var(--good);
+  color: var(--good);
+}
+
+.trend-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.trend-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px 3.2rem;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+}
+
+.trend-row__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trend-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  overflow: hidden;
+}
+
+.trend-bar__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--bad), var(--good));
+  border-radius: 999px;
+}
+
+.trend-row__count {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.yoga-plan__disclaimer {
+  margin-top: 1rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* --- Gamification / progress view --- */
+
+.progress-card {
+  text-align: left;
+  margin-top: 1.5rem;
+}
+
+.progress-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+
+.progress-stat {
+  flex: 1 1 120px;
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0.9rem 1rem;
+  text-align: center;
+}
+
+.progress-stat__value {
+  font-size: 1.6rem;
+  font-weight: 800;
+  display: block;
+  line-height: 1.1;
+}
+
+.progress-stat__label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.progress-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+}
+
+.progress-badge {
+  padding: 0.35rem 0.8rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--accent-strong), #ec4899);
+  color: #fff;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.35);
+}
+
+.progress-heatmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 14px);
+  gap: 4px;
+  justify-content: start;
+}
+
+.progress-heatmap__cell {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.progress-heatmap__cell.is-active {
+  background: var(--good);
+  border-color: var(--good);
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.library-card {
+  background: var(--surface-strong);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 0.9rem;
+}
