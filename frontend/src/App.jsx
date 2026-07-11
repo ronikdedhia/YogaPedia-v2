@@ -1,7 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
 import { ClerkProvider, SignedIn, SignedOut, SignIn, UserButton, useAuth, useClerk } from '@clerk/clerk-react';
-import PoseCheck from './PoseCheck.jsx';
-import YogaPlan from './YogaPlan.jsx';
 import OnboardingForm from './OnboardingForm.jsx';
 import TodayView from './TodayView.jsx';
 import PlanView from './PlanView.jsx';
@@ -29,24 +27,16 @@ const TABS = [
   { key: 'settings', label: 'Settings' },
 ];
 
-// No Clerk configured — falls back to the original open (no-login) experience, so
-// pose-check and the one-off yoga-plan form keep working while Clerk/Mongo aren't set up yet.
-function OpenModeApp() {
+// No Clerk configured — fails CLOSED (blocks the app entirely) rather than falling back to
+// an open, no-login experience. A misconfigured/missing key must never mean "everyone gets
+// in without signing in."
+function AuthNotConfigured() {
   return (
     <main className="app">
-      <h1>YogaPedia — Live Pose Check</h1>
+      <h1>YogaPedia</h1>
       <p className="app__subtitle">
-        Hold a pose in front of your webcam. A snapshot is checked every few seconds.
-      </p>
-      <PoseCheck />
-
-      <h1 style={{ marginTop: '3rem' }}>Personalized Yoga Plan</h1>
-      <p className="app__subtitle">Tell us what you're dealing with and we'll draft a short daily practice.</p>
-      <YogaPlan />
-
-      <p className="app__auth-note">
-        Sign-in and a saved weekly schedule aren't active yet — set <code>VITE_CLERK_PUBLISHABLE_KEY</code>{' '}
-        (frontend) and <code>CLERK_SECRET_KEY</code> (backend) to enable them.
+        Sign-in isn't configured for this deployment — set <code>VITE_CLERK_PUBLISHABLE_KEY</code> (frontend) and{' '}
+        <code>CLERK_SECRET_KEY</code> (backend) to enable access.
       </p>
     </main>
   );
@@ -137,7 +127,7 @@ function AuthedApp() {
 }
 
 export default function App() {
-  if (!CLERK_KEY) return <OpenModeApp />;
+  if (!CLERK_KEY) return <AuthNotConfigured />;
 
   return (
     <ClerkProvider publishableKey={CLERK_KEY}>

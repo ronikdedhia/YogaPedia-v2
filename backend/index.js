@@ -31,6 +31,12 @@ const { startDailyFactScheduler } = require('./dailyFactScheduler');
 
 const app = express();
 app.use(cors());
+
+// Registered before any other middleware (including Clerk's, which does its own network
+// I/O per request) so host platform liveness/health checks (e.g. Render) never depend on
+// Mongo/Clerk/anything else being reachable — this route must always answer instantly.
+app.get('/api/health', (_req, res) => res.json({ ok: true }));
+
 app.use(express.json({ limit: '5mb' }));
 app.use(attachClerk());
 
@@ -574,8 +580,6 @@ app.get('/api/config-status', (_req, res) =>
     telegram: hasTelegramKeys,
   }),
 );
-
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // Manual "send me a summary right now" — lets the signed-in user verify the whole pipeline
 // (Mongo data -> Clerk email lookup -> Brevo send) without waiting for the real weekly
