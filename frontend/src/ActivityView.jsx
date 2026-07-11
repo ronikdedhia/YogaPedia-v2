@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
-import { makeAuthFetch } from './api.js';
+import { makeAuthFetch, API_BASE } from './api.js';
 
 const HEATMAP_DAYS = 84; // ~12 weeks
 
@@ -38,7 +38,9 @@ function computeStats(sessions) {
 
   const totalPoseChecks = sessions.reduce((sum, s) => sum + (s.poseResults?.length || 0), 0);
 
-  return { currentStreak, longestStreak, totalSessions: sessions.length, totalPoseChecks, dateSet };
+  const distinctPosesTried = new Set(sessions.flatMap((s) => (s.poseResults || []).map((p) => p.asana).filter(Boolean)));
+
+  return { currentStreak, longestStreak, totalSessions: sessions.length, totalPoseChecks, distinctPosesTried, dateSet };
 }
 
 // Per-pose accuracy trend ("correct in 8 of your last 10 attempts") — plain client-side
@@ -64,14 +66,16 @@ function computePoseTrends(sessions, { maxAttempts = 10 } = {}) {
   return trends.sort((a, b) => a.correctCount / a.total - b.correctCount / b.total);
 }
 
-function computeBadges({ totalSessions, currentStreak, longestStreak }) {
+function computeBadges({ totalSessions, currentStreak, longestStreak, distinctPosesTried }, totalPoses) {
   const badges = [];
   if (totalSessions >= 1) badges.push('🌱 First session');
   if (totalSessions >= 10) badges.push('🌿 10 sessions');
   if (totalSessions >= 50) badges.push('🌳 50 sessions');
+  if (totalSessions >= 100) badges.push('💯 100 sessions');
   if (currentStreak >= 3 || longestStreak >= 3) badges.push('🔥 3-day streak');
   if (currentStreak >= 7 || longestStreak >= 7) badges.push('🔥 7-day streak');
   if (currentStreak >= 30 || longestStreak >= 30) badges.push('🏆 30-day streak');
+  if (totalPoses && distinctPosesTried.size >= totalPoses) badges.push('🧘 Tried every pose');
   return badges;
 }
 
@@ -125,6 +129,15 @@ function SessionRow({ session }) {
         {session.walkCompleted && <span className="progress-badge">🚶 Walk</span>}
         {session.waterCompleted && <span className="progress-badge">💧 Water</span>}
       </div>
+      {session.pranayamaSkipReason && (
+        <p className="yoga-plan__step-why" style={{ color: 'var(--muted)' }}>🫁 Skipped — {session.pranayamaSkipReason}</p>
+      )}
+      {session.walkSkipReason && (
+        <p className="yoga-plan__step-why" style={{ color: 'var(--muted)' }}>🚶 Skipped — {session.walkSkipReason}</p>
+      )}
+      {session.waterSkipReason && (
+        <p className="yoga-plan__step-why" style={{ color: 'var(--muted)' }}>💧 Skipped — {session.waterSkipReason}</p>
+      )}
       {session.note && <p className="yoga-plan__step-why" style={{ fontStyle: 'italic' }}>"{session.note}"</p>}
     </div>
   );
@@ -134,6 +147,7 @@ export default function ActivityView() {
   const { getToken } = useAuth();
   const [sessions, setSessions] = useState(null);
   const [error, setError] = useState(null);
+  const [totalPoses, setTotalPoses] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -155,6 +169,15 @@ export default function ActivityView() {
     };
   }, [getToken]);
 
+  // Public endpoint, no auth needed — just the count of known poses, for the "tried every
+  // pose" badge threshold.
+  useEffect(() => {
+    fetch(`${API_BASE}/api/asanas`)
+      .then((r) => r.json())
+      .then((list) => setTotalPoses(list.length))
+      .catch(() => setTotalPoses(null));
+  }, []);
+
   if (error) return <p className="pose-check__error">{error}</p>;
   if (!sessions) return <p>Loading your activity…</p>;
 
@@ -168,7 +191,7 @@ export default function ActivityView() {
   }
 
   const stats = computeStats(sessions);
-  const badges = computeBadges(stats);
+  const badges = computeBadges(stats, totalPoses);
   const poseTrends = computePoseTrends(sessions);
 
   return (

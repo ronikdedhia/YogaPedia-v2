@@ -11,8 +11,11 @@ export default function PracticeSession({ today, onBack, onFinish }) {
   const [poseResults, setPoseResults] = useState([]);
   const [showWrapUp, setShowWrapUp] = useState(false);
   const [pranayamaCompleted, setPranayamaCompleted] = useState(false);
+  const [pranayamaSkipReason, setPranayamaSkipReason] = useState('');
   const [walkCompleted, setWalkCompleted] = useState(false);
+  const [walkSkipReason, setWalkSkipReason] = useState('');
   const [waterCompleted, setWaterCompleted] = useState(false);
+  const [waterSkipReason, setWaterSkipReason] = useState('');
   const [note, setNote] = useState('');
 
   // Track only the LATEST check result + elapsed timer value for whichever pose is
@@ -63,7 +66,16 @@ export default function PracticeSession({ today, onBack, onFinish }) {
   }
 
   function handleFinish() {
-    onFinish({ poseResults, pranayamaCompleted, walkCompleted, waterCompleted, note: note.trim() || undefined });
+    onFinish({
+      poseResults,
+      pranayamaCompleted,
+      pranayamaSkipReason: !pranayamaCompleted ? pranayamaSkipReason.trim() || undefined : undefined,
+      walkCompleted,
+      walkSkipReason: !walkCompleted ? walkSkipReason.trim() || undefined : undefined,
+      waterCompleted,
+      waterSkipReason: !waterCompleted ? waterSkipReason.trim() || undefined : undefined,
+      note: note.trim() || undefined,
+    });
   }
 
   if (showWrapUp) {
@@ -75,44 +87,86 @@ export default function PracticeSession({ today, onBack, onFinish }) {
         </p>
 
         {today.pranayama && (
-          <label className="yoga-plan__flag" style={{ marginBottom: '1rem', display: 'flex' }}>
-            <input type="checkbox" checked={pranayamaCompleted} onChange={(e) => setPranayamaCompleted(e.target.checked)} />
-            Breathing — {today.pranayama.technique} ({today.pranayama.duration_minutes} min)
-          </label>
+          <div className="wellness-card">
+            <div className="wellness-card__item">
+              <span className="wellness-card__info">
+                <span className="wellness-card__icon">🫁</span>
+                Breathing — {today.pranayama.technique} ({today.pranayama.duration_minutes} min)
+              </span>
+              <button
+                type="button"
+                className={`wellness-card__toggle ${pranayamaCompleted ? 'is-done' : ''}`}
+                onClick={() => setPranayamaCompleted((v) => !v)}
+              >
+                {pranayamaCompleted ? '✓ Done' : 'Not yet'}
+              </button>
+            </div>
+            {!pranayamaCompleted && (
+              <input
+                type="text"
+                className="yoga-plan__textarea"
+                placeholder="Why not? (optional)"
+                value={pranayamaSkipReason}
+                onChange={(e) => setPranayamaSkipReason(e.target.value)}
+              />
+            )}
+          </div>
         )}
 
         {(today.walk || today.waterTargetLiters) && (
           <div className="wellness-card">
             <h4>Did you hit today's targets?</h4>
             {today.walk && (
-              <div className="wellness-card__item">
-                <span className="wellness-card__info">
-                  <span className="wellness-card__icon">🚶</span>
-                  Walk — {today.walk.duration_minutes} min
-                </span>
-                <button
-                  type="button"
-                  className={`wellness-card__toggle ${walkCompleted ? 'is-done' : ''}`}
-                  onClick={() => setWalkCompleted((v) => !v)}
-                >
-                  {walkCompleted ? '✓ Done' : 'Not yet'}
-                </button>
-              </div>
+              <>
+                <div className="wellness-card__item">
+                  <span className="wellness-card__info">
+                    <span className="wellness-card__icon">🚶</span>
+                    Walk — {today.walk.duration_minutes} min
+                  </span>
+                  <button
+                    type="button"
+                    className={`wellness-card__toggle ${walkCompleted ? 'is-done' : ''}`}
+                    onClick={() => setWalkCompleted((v) => !v)}
+                  >
+                    {walkCompleted ? '✓ Done' : 'Not yet'}
+                  </button>
+                </div>
+                {!walkCompleted && (
+                  <input
+                    type="text"
+                    className="yoga-plan__textarea"
+                    placeholder="Why not? (optional)"
+                    value={walkSkipReason}
+                    onChange={(e) => setWalkSkipReason(e.target.value)}
+                  />
+                )}
+              </>
             )}
             {today.waterTargetLiters && (
-              <div className="wellness-card__item">
-                <span className="wellness-card__info">
-                  <span className="wellness-card__icon">💧</span>
-                  Water — {today.waterTargetLiters}L today
-                </span>
-                <button
-                  type="button"
-                  className={`wellness-card__toggle ${waterCompleted ? 'is-done' : ''}`}
-                  onClick={() => setWaterCompleted((v) => !v)}
-                >
-                  {waterCompleted ? '✓ Done' : 'Not yet'}
-                </button>
-              </div>
+              <>
+                <div className="wellness-card__item">
+                  <span className="wellness-card__info">
+                    <span className="wellness-card__icon">💧</span>
+                    Water — {today.waterTargetLiters}L today
+                  </span>
+                  <button
+                    type="button"
+                    className={`wellness-card__toggle ${waterCompleted ? 'is-done' : ''}`}
+                    onClick={() => setWaterCompleted((v) => !v)}
+                  >
+                    {waterCompleted ? '✓ Done' : 'Not yet'}
+                  </button>
+                </div>
+                {!waterCompleted && (
+                  <input
+                    type="text"
+                    className="yoga-plan__textarea"
+                    placeholder="Why not? (optional)"
+                    value={waterSkipReason}
+                    onChange={(e) => setWaterSkipReason(e.target.value)}
+                  />
+                )}
+              </>
             )}
           </div>
         )}

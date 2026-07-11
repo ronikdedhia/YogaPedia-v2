@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getAsanaGif } from './asanaGifs.js';
-import { getConfidenceThreshold, setConfidenceThreshold as persistConfidenceThreshold, getTtsEnabled, setTtsEnabled as persistTtsEnabled, getVoiceId, getLanguage } from './preferences.js';
+import { getConfidenceThreshold, setConfidenceThreshold as persistConfidenceThreshold, getTtsEnabled, setTtsEnabled as persistTtsEnabled, getLanguage } from './preferences.js';
+import { useSpeech, TTS_SUPPORTED } from './useSpeech.js';
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 // Groq's free-tier vision model caps at 30,000 tokens/min; each check costs ~2,700-3,000
@@ -8,7 +9,6 @@ const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8787';
 // cap, guaranteeing a 429 within ~15-20s of continuous use. 7s keeps it under with margin
 // even at the higher end of that per-request token range (~8.5 req/min x 3,000 ≈ 25.7k).
 const CHECK_INTERVAL_MS = 7000;
-const TTS_SUPPORTED = typeof window !== 'undefined' && 'speechSynthesis' in window;
 
 // Fixed instructional phrases never come from the vision model, so they need their own
 // translation — a language picker that left these three in English would feel half-done.
@@ -26,12 +26,24 @@ const FIXED_PHRASES = {
 function buildSpokenText(data, confidenceThreshold, language = 'en') {
   const phrases = FIXED_PHRASES[language] || FIXED_PHRASES.en;
   const confident = data.confidence >= confidenceThreshold && data.pose !== 'Unrecognized';
-  if (!confident) return phrases.needsBody;
+  const correction = (language !== 'en' && data.correction_localized) || data.correction;
+  if (!confident) return correction || phrases.needsBody;
   if (data.is_correct) return phrases.good;
   const bodyPart = (language !== 'en' && data.body_part_localized) || data.body_part;
-  const correction = (language !== 'en' && data.correction_localized) || data.correction;
   if (bodyPart && correction) return `${bodyPart}. ${correction}`;
   return correction || phrases.adjust;
+}
+
+// Spoken every full minute a timed hold is in progress, e.g. "2 minutes done, 3 minutes
+// remaining." — announced through the same speak() pipeline as pose corrections, so it
+// respects the same voice-on/off toggle and ElevenLabs/browser fallback.
+function buildTimerAnnouncement(minutesDone, minutesRemaining, language = 'en') {
+  const doneUnit = minutesDone === 1 ? { en: 'minute', hi: 'मिनट' } : { en: 'minutes', hi: 'मिनट' };
+  const remainingUnit = minutesRemaining === 1 ? { en: 'minute', hi: 'मिनट' } : { en: 'minutes', hi: 'मिनट' };
+  if (language === 'hi') {
+    return `${minutesDone} ${doneUnit.hi} पूरे हुए, ${minutesRemaining} ${remainingUnit.hi} शेष हैं।`;
+  }
+  return `${minutesDone} ${doneUnit.en} done, ${minutesRemaining} ${remainingUnit.en} remaining.`;
 }
 
 function formatClock(totalSeconds) {
@@ -54,7 +66,6 @@ function formatClock(totalSeconds) {
 export default function PoseCheck({ posesOverride, onPoseResult, targetDurationMinutes, onElapsedChange } = {}) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const audioRef = useRef(null);
   const [status, setStatus] = useState('idle'); // idle | starting | live | error
   const [cameraOn, setCameraOn] = useState(false);
   const [showConsent, setShowConsent] = useState(false);
@@ -63,8 +74,7 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
   // so a plain read at mount is enough — unlike confidenceThreshold there's nothing that
   // changes it while this component stays mounted.
   const [language] = useState(getLanguage);
-  const [voiceUnlocked, setVoiceUnlocked] = useState(false);
-  const [elevenLabsEnabled, setElevenLabsEnabled] = useState(false);
+  const { speak, unlockVoice, stopSpeaking, voiceUnlocked } = useSpeech({ ttsEnabled, language });
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [asanaList, setAsanaList] = useState(posesOverride || []);
@@ -115,10 +125,6 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
         .catch((err) => console.error('Failed to load asana list:', err));
     }
 
-    fetch(`${API_BASE}/api/tts-status`)
-      .then((r) => r.json())
-      .then((data) => setElevenLabsEnabled(Boolean(data.enabled)))
-      .catch(() => setElevenLabsEnabled(false)); // server unreachable/older — just use browser TTS
   }, []);
 
   // Keep the demo GIF and vision-check candidate list in sync when a parent (e.g.
@@ -133,139 +139,20 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
     }
   }, [posesOverride?.[0]]);
 
-  const ttsEnabledRef = useRef(ttsEnabled);
-  const voiceUnlockedRef = useRef(voiceUnlocked);
-  const elevenLabsEnabledRef = useRef(elevenLabsEnabled);
-  const isSpeakingRef = useRef(false);
-  const pendingTextRef = useRef(null);
-  const lastQueuedRef = useRef('');
-
-  useEffect(() => {
-    elevenLabsEnabledRef.current = elevenLabsEnabled;
-  }, [elevenLabsEnabled]);
-
   useEffect(() => {
     confidenceThresholdRef.current = confidenceThreshold;
     persistConfidenceThreshold(confidenceThreshold);
   }, [confidenceThreshold]);
 
   useEffect(() => {
-    ttsEnabledRef.current = ttsEnabled;
     persistTtsEnabled(ttsEnabled);
-    if (!ttsEnabled) stopSpeaking();
   }, [ttsEnabled]);
-
-  useEffect(() => {
-    voiceUnlockedRef.current = voiceUnlocked;
-  }, [voiceUnlocked]);
-
-  function stopSpeaking() {
-    pendingTextRef.current = null;
-    isSpeakingRef.current = false;
-    if (TTS_SUPPORTED) window.speechSynthesis.cancel();
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.removeAttribute('src');
-    }
-  }
-
-  function onSpeechDone() {
-    isSpeakingRef.current = false;
-    if (pendingTextRef.current) {
-      const next = pendingTextRef.current;
-      pendingTextRef.current = null;
-      speakNow(next);
-    }
-  }
-
-  // Best-effort: sets the locale hint so the OS/browser picks a matching voice if one is
-  // installed. If no Hindi voice exists on the device, the browser falls back to whatever
-  // default voice it has — same "voice quality depends on the browser/OS" caveat that
-  // already applies to English (see ARCHITECTURE.md §8), just more likely to bite for a
-  // language with less universal OS voice support.
-  const UTTERANCE_LANGS = { en: 'en-US', hi: 'hi-IN' };
-  function speakViaBrowser(text) {
-    if (!TTS_SUPPORTED) {
-      onSpeechDone();
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = UTTERANCE_LANGS[language] || 'en-US';
-    utterance.onend = utterance.onerror = onSpeechDone;
-    window.speechSynthesis.speak(utterance);
-  }
-
-  async function speakViaElevenLabs(text) {
-    try {
-      const voiceId = getVoiceId();
-      const res = await fetch(`${API_BASE}/api/tts`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(voiceId ? { text, voiceId } : { text }),
-      });
-      if (!res.ok) throw new Error(`Server responded ${res.status}`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const audio = audioRef.current;
-      audio.src = url;
-      audio.onended = audio.onerror = () => {
-        URL.revokeObjectURL(url);
-        onSpeechDone();
-      };
-      await audio.play();
-    } catch (err) {
-      console.error('ElevenLabs playback failed, falling back to browser voice:', err);
-      speakViaBrowser(text); // don't go silent just because the quota ran out or a request failed
-    }
-  }
-
-  function speakNow(text) {
-    isSpeakingRef.current = true;
-    if (elevenLabsEnabledRef.current) {
-      speakViaElevenLabs(text);
-    } else {
-      speakViaBrowser(text);
-    }
-  }
-
-  // Speak the current instruction fully before starting the next one. If the pose check
-  // result changes mid-sentence, only the LATEST instruction is queued to speak next —
-  // stale intermediate ones are dropped rather than read out in a backlog.
-  function speak(text) {
-    if (!ttsEnabledRef.current || !voiceUnlockedRef.current) return;
-    if (!elevenLabsEnabledRef.current && !TTS_SUPPORTED) return;
-    if (!text || text === lastQueuedRef.current) return;
-    lastQueuedRef.current = text;
-    if (isSpeakingRef.current) {
-      pendingTextRef.current = text;
-    } else {
-      speakNow(text);
-    }
-  }
-
-  function unlockVoice() {
-    if (TTS_SUPPORTED) {
-      // Speaking inside this click handler satisfies the browser's user-gesture
-      // requirement for audio, unlocking all later auto-triggered speech for the
-      // rest of the session — no further clicks needed.
-      window.speechSynthesis.speak(new SpeechSynthesisUtterance(''));
-    }
-    // Same trick for the <audio> element the ElevenLabs path uses — a silent clip
-    // played inside this click satisfies the browser's autoplay-gesture requirement
-    // for it too, so later auto-triggered playback isn't blocked.
-    if (audioRef.current) {
-      audioRef.current.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-      audioRef.current.play().catch(() => {});
-    }
-    setVoiceUnlocked(true);
-  }
 
   useEffect(() => {
     if (!cameraOn) {
       setStatus('idle');
       setResult(null);
       stopSpeaking();
-      lastQueuedRef.current = '';
       wasGoodRef.current = false;
       return;
     }
@@ -370,6 +257,16 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
     onElapsedChange?.(elapsedSeconds);
   }, [elapsedSeconds, onElapsedChange]);
 
+  // Every full minute a timed hold is in progress (and not yet complete), speak how much
+  // is done and how much is left — e.g. "2 minutes done, 3 minutes remaining."
+  useEffect(() => {
+    if (!targetDurationMinutes || elapsedSeconds === 0 || elapsedSeconds % 60 !== 0) return;
+    const minutesDone = elapsedSeconds / 60;
+    const minutesRemaining = targetDurationMinutes - minutesDone;
+    if (minutesRemaining <= 0) return;
+    speak(buildTimerAnnouncement(minutesDone, minutesRemaining, language));
+  }, [elapsedSeconds, targetDurationMinutes, language]);
+
   const isConfident = result && result.confidence >= confidenceThreshold && result.pose !== 'Unrecognized';
   const isGoodPose = isConfident && result.is_correct;
 
@@ -383,7 +280,6 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
 
   return (
     <div className="pose-check">
-      <audio ref={audioRef} style={{ display: 'none' }} />
       {showConsent && (
         <div className="consent-modal__backdrop" role="dialog" aria-modal="true">
           <div className="consent-modal">
@@ -409,6 +305,7 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
                 type="button"
                 className="pose-check__btn is-active"
                 onClick={() => {
+                  unlockVoice(); // this click is a real user gesture — piggyback the autoplay unlock so voice works without a separate tap
                   setCameraOn(true);
                   setShowConsent(false);
                 }}
@@ -420,7 +317,7 @@ export default function PoseCheck({ posesOverride, onPoseResult, targetDurationM
         </div>
       )}
 
-      {!voiceUnlocked && TTS_SUPPORTED && (
+      {!voiceUnlocked && (
         <button type="button" className="pose-check__unlock-banner" onClick={unlockVoice}>
           🔊 Tap once to enable spoken guidance — no need to press again after this
         </button>

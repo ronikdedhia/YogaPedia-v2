@@ -1,6 +1,18 @@
 const { getDb } = require('../db');
 
-async function saveSessionLog({ userId, date, dayOfWeek, poseResults, pranayamaCompleted, walkCompleted, waterCompleted, note }) {
+async function saveSessionLog({
+  userId,
+  date,
+  dayOfWeek,
+  poseResults,
+  pranayamaCompleted,
+  pranayamaSkipReason,
+  walkCompleted,
+  walkSkipReason,
+  waterCompleted,
+  waterSkipReason,
+  note,
+}) {
   const db = await getDb();
   const doc = {
     userId,
@@ -8,8 +20,11 @@ async function saveSessionLog({ userId, date, dayOfWeek, poseResults, pranayamaC
     dayOfWeek,
     poseResults,
     pranayamaCompleted: Boolean(pranayamaCompleted),
+    pranayamaSkipReason: !pranayamaCompleted && pranayamaSkipReason ? pranayamaSkipReason : undefined,
     walkCompleted: Boolean(walkCompleted),
+    walkSkipReason: !walkCompleted && walkSkipReason ? walkSkipReason : undefined,
     waterCompleted: Boolean(waterCompleted),
+    waterSkipReason: !waterCompleted && waterSkipReason ? waterSkipReason : undefined,
     note,
     completedAt: new Date(),
   };

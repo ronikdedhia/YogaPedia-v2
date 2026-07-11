@@ -9,6 +9,9 @@ import ActivityView from './ActivityView.jsx';
 import QuickRecommendView from './QuickRecommendView.jsx';
 import LibraryView from './LibraryView.jsx';
 import SettingsView from './SettingsView.jsx';
+import MeditationZoneView from './MeditationZoneView.jsx';
+import DiscoverView from './DiscoverView.jsx';
+import CommunitiesView from './CommunitiesView.jsx';
 import { usePracticeReminder } from './usePracticeReminder.js';
 import { makeAuthFetch } from './api.js';
 import './App.css';
@@ -20,6 +23,9 @@ const TABS = [
   { key: 'activity', label: 'Activity' },
   { key: 'recommend', label: 'Quick Recommend' },
   { key: 'library', label: 'Library' },
+  { key: 'communities', label: 'Communities' },
+  { key: 'meditation', label: 'Meditation' },
+  { key: 'discover', label: 'Discover' },
   { key: 'settings', label: 'Settings' },
 ];
 
@@ -121,6 +127,9 @@ function AuthedApp() {
         {tab === 'activity' && <ActivityView />}
         {tab === 'recommend' && <QuickRecommendView />}
         {tab === 'library' && <LibraryView />}
+        {tab === 'communities' && <CommunitiesView />}
+        {tab === 'meditation' && <MeditationZoneView />}
+        {tab === 'discover' && <DiscoverView />}
         {tab === 'settings' && <SettingsView />}
       </main>
     </>

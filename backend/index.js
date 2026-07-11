@@ -21,6 +21,13 @@ const { startWeeklySummaryScheduler } = require('./weeklySummaryScheduler');
 const { saveSessionLog, getSessionLogsForUser, getStruggleSummaryForUser } = require('./models/sessionLogs');
 const { computeFlagHistory, computeIntensityTier, clampPlanIntensity } = require('./safetyTapering');
 const { hasClerkKeys, attachClerk, requireAuthOrNotConfigured, getUserId } = require('./auth');
+const { hasZoomKeys, createZoomMeeting } = require('./zoom');
+const CommunitiesModel = require('./models/communities');
+const CommunityPostsModel = require('./models/communityPosts');
+const GroupSessionsModel = require('./models/groupSessions');
+const { hasTelegramKeys, sendTelegramMessage } = require('./telegram');
+const { draftYogaFact } = require('./chains/yogaFact');
+const { startDailyFactScheduler } = require('./dailyFactScheduler');
 
 const app = express();
 app.use(cors());
@@ -249,7 +256,16 @@ app.post('/api/sessions', requireAuthOrNotConfigured(), async (req, res) => {
     return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
   }
   const userId = getUserId(req);
-  const { poseResults = [], pranayamaCompleted, walkCompleted, waterCompleted, note } = req.body || {};
+  const {
+    poseResults = [],
+    pranayamaCompleted,
+    pranayamaSkipReason,
+    walkCompleted,
+    walkSkipReason,
+    waterCompleted,
+    waterSkipReason,
+    note,
+  } = req.body || {};
   if (!Array.isArray(poseResults) || poseResults.length === 0) {
     return res.status(400).json({ error: 'poseResults must be a non-empty array.' });
   }
@@ -262,10 +278,14 @@ app.post('/api/sessions', requireAuthOrNotConfigured(), async (req, res) => {
       dayOfWeek: now.toLocaleDateString('en-US', { weekday: 'long' }),
       poseResults,
       // Self-reported — pranayama/walk/water aren't camera-checkable, so these are
-      // just what the user says they did, not verified.
+      // just what the user says they did, not verified. Skip reasons are likewise
+      // self-reported, only kept when the item wasn't completed.
       pranayamaCompleted: Boolean(pranayamaCompleted),
+      pranayamaSkipReason: typeof pranayamaSkipReason === 'string' ? pranayamaSkipReason.slice(0, 300) : undefined,
       walkCompleted: Boolean(walkCompleted),
+      walkSkipReason: typeof walkSkipReason === 'string' ? walkSkipReason.slice(0, 300) : undefined,
       waterCompleted: Boolean(waterCompleted),
+      waterSkipReason: typeof waterSkipReason === 'string' ? waterSkipReason.slice(0, 300) : undefined,
       note: typeof note === 'string' ? note.slice(0, 500) : undefined,
     });
     return res.json(saved);
@@ -286,6 +306,200 @@ app.get('/api/sessions', requireAuthOrNotConfigured(), async (req, res) => {
   } catch (err) {
     console.error('Failed to fetch session logs:', err);
     return res.status(502).json({ error: 'Could not fetch session history.' });
+  }
+});
+
+// --- Communities (requires Mongo + Clerk; sessions additionally require Zoom) ---
+
+app.post('/api/communities', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const { name, description = '' } = req.body || {};
+  if (!name || typeof name !== 'string' || !name.trim()) {
+    return res.status(400).json({ error: 'Community "name" is required.' });
+  }
+  try {
+    const community = await CommunitiesModel.createCommunity({ name: name.trim(), description, createdByUserId: getUserId(req) });
+    return res.json(community);
+  } catch (err) {
+    console.error('Failed to create community:', err);
+    return res.status(502).json({ error: 'Could not create community.' });
+  }
+});
+
+app.get('/api/communities', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const userId = getUserId(req);
+  try {
+    const communities = await CommunitiesModel.listCommunities(typeof req.query.q === 'string' ? req.query.q : undefined);
+    return res.json(
+      communities.map((c) => ({
+        _id: c._id,
+        name: c.name,
+        description: c.description,
+        memberCount: c.memberUserIds.length,
+        isMember: c.memberUserIds.includes(userId),
+      })),
+    );
+  } catch (err) {
+    console.error('Failed to list communities:', err);
+    return res.status(502).json({ error: 'Could not fetch communities.' });
+  }
+});
+
+app.post('/api/communities/:id/join', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  try {
+    const community = await CommunitiesModel.joinCommunity(req.params.id, getUserId(req));
+    if (!community) return res.status(404).json({ error: 'Community not found.' });
+    return res.json({ joined: true });
+  } catch (err) {
+    console.error('Failed to join community:', err);
+    return res.status(502).json({ error: 'Could not join community.' });
+  }
+});
+
+app.post('/api/communities/:id/leave', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  try {
+    await CommunitiesModel.leaveCommunity(req.params.id, getUserId(req));
+    return res.json({ left: true });
+  } catch (err) {
+    console.error('Failed to leave community:', err);
+    return res.status(502).json({ error: 'Could not leave community.' });
+  }
+});
+
+app.get('/api/communities/:id/posts', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const userId = getUserId(req);
+  try {
+    if (!(await CommunitiesModel.isMember(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Join this community to see its posts.' });
+    }
+    const posts = await CommunityPostsModel.listPosts(req.params.id);
+    return res.json(posts);
+  } catch (err) {
+    console.error('Failed to list community posts:', err);
+    return res.status(502).json({ error: 'Could not fetch posts.' });
+  }
+});
+
+app.post('/api/communities/:id/posts', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const userId = getUserId(req);
+  const { text } = req.body || {};
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return res.status(400).json({ error: 'Post "text" is required.' });
+  }
+  try {
+    if (!(await CommunitiesModel.isMember(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Join this community to post.' });
+    }
+    const post = await CommunityPostsModel.createPost({ communityId: req.params.id, authorUserId: userId, text: text.trim().slice(0, 2000) });
+    return res.json(post);
+  } catch (err) {
+    console.error('Failed to create community post:', err);
+    return res.status(502).json({ error: 'Could not post message.' });
+  }
+});
+
+app.get('/api/communities/:id/sessions', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const userId = getUserId(req);
+  try {
+    if (!(await CommunitiesModel.isMember(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Join this community to see its sessions.' });
+    }
+    const sessions = await GroupSessionsModel.listUpcomingForCommunity(req.params.id);
+    // Only the teacher and joined attendees get the real Zoom link — everyone else just
+    // sees the session exists, so they can decide whether to join first.
+    return res.json(
+      sessions.map((s) => {
+        const isTeacher = s.teacherUserId === userId;
+        const isAttendee = s.attendeeUserIds.includes(userId);
+        return {
+          _id: s._id,
+          title: s.title,
+          focusArea: s.focusArea,
+          scheduledAt: s.scheduledAt,
+          durationMinutes: s.durationMinutes,
+          capacity: s.capacity,
+          seatsLeft: s.capacity - s.attendeeUserIds.length,
+          isTeacher,
+          isAttendee,
+          joinUrl: isTeacher || isAttendee ? s.zoom?.joinUrl : undefined,
+        };
+      }),
+    );
+  } catch (err) {
+    console.error('Failed to list group sessions:', err);
+    return res.status(502).json({ error: 'Could not fetch sessions.' });
+  }
+});
+
+app.post('/api/communities/:id/sessions', llmLimiter, requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  if (!hasZoomKeys) return res.status(501).json({ error: 'Zoom is not configured — set ZOOM_ACCOUNT_ID, ZOOM_CLIENT_ID, ZOOM_CLIENT_SECRET in backend/.env.' });
+  const userId = getUserId(req);
+  const { title, focusArea = '', scheduledAt, durationMinutes, capacity } = req.body || {};
+  if (!title || typeof title !== 'string' || !title.trim()) {
+    return res.status(400).json({ error: 'Session "title" is required.' });
+  }
+  if (!scheduledAt || Number.isNaN(new Date(scheduledAt).getTime())) {
+    return res.status(400).json({ error: '"scheduledAt" must be a valid date/time.' });
+  }
+  if (!Number.isInteger(durationMinutes) || durationMinutes < 5 || durationMinutes > 180) {
+    return res.status(400).json({ error: 'durationMinutes must be an integer between 5 and 180.' });
+  }
+  if (!Number.isInteger(capacity) || capacity < 1 || capacity > 500) {
+    return res.status(400).json({ error: 'capacity must be an integer between 1 and 500.' });
+  }
+  try {
+    if (!(await CommunitiesModel.isMember(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Join this community to host a session in it.' });
+    }
+    const zoom = await createZoomMeeting({ topic: title.trim(), startTime: new Date(scheduledAt).toISOString(), durationMinutes });
+    const session = await GroupSessionsModel.createSession({
+      communityId: req.params.id,
+      teacherUserId: userId,
+      title: title.trim(),
+      focusArea,
+      scheduledAt: new Date(scheduledAt),
+      durationMinutes,
+      capacity,
+      zoom,
+    });
+    return res.json(session);
+  } catch (err) {
+    console.error('Failed to create group session:', err);
+    return res.status(502).json({ error: 'Could not create session — check server logs.' });
+  }
+});
+
+app.post('/api/communities/:id/sessions/:sessionId/join', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  const userId = getUserId(req);
+  try {
+    if (!(await CommunitiesModel.isMember(req.params.id, userId))) {
+      return res.status(403).json({ error: 'Join this community to join its sessions.' });
+    }
+    const session = await GroupSessionsModel.joinSession(req.params.sessionId, userId);
+    if (!session) return res.status(404).json({ error: 'Session not found.' });
+    return res.json({ joined: true, joinUrl: session.zoom?.joinUrl });
+  } catch (err) {
+    console.error('Failed to join session:', err);
+    return res.status(409).json({ error: err.message || 'Could not join session.' });
+  }
+});
+
+app.post('/api/communities/:id/sessions/:sessionId/leave', requireAuthOrNotConfigured(), async (req, res) => {
+  if (!hasMongoUri) return res.status(501).json({ error: 'MongoDB is not configured — set MONGODB_URI in backend/.env.' });
+  try {
+    await GroupSessionsModel.leaveSession(req.params.sessionId, getUserId(req));
+    return res.json({ left: true });
+  } catch (err) {
+    console.error('Failed to leave session:', err);
+    return res.status(502).json({ error: 'Could not leave session.' });
   }
 });
 
@@ -350,7 +564,15 @@ app.get('/api/asanas', (_req, res) => res.json(ASANAS));
 app.get('/api/asanas/library', (_req, res) => res.json(CURATED_ASANAS));
 
 app.get('/api/config-status', (_req, res) =>
-  res.json({ groq: hasApiKey, elevenLabs: hasElevenLabsKey, mongo: hasMongoUri, clerk: hasClerkKeys, brevo: hasBrevoKey }),
+  res.json({
+    groq: hasApiKey,
+    elevenLabs: hasElevenLabsKey,
+    mongo: hasMongoUri,
+    clerk: hasClerkKeys,
+    brevo: hasBrevoKey,
+    zoom: hasZoomKeys,
+    telegram: hasTelegramKeys,
+  }),
 );
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
@@ -373,8 +595,30 @@ app.post('/api/email-summary/send-test', llmLimiter, requireAuthOrNotConfigured(
   }
 });
 
+// Manual "send a yoga fact right now" — verifies the Groq -> Telegram pipeline without
+// waiting for the real daily send window in dailyFactScheduler.js. Rate-limited like the
+// other manual test/LLM-triggering endpoints; no auth needed since it doesn't touch any
+// per-user data, just broadcasts to the shared channel.
+app.post('/api/telegram/send-now', llmLimiter, async (_req, res) => {
+  if (!hasTelegramKeys) {
+    return res.status(501).json({ error: 'Telegram is not configured — set TELEGRAM_ACCESS_TOKEN and TELEGRAM_CHANNEL_ID in backend/.env.' });
+  }
+  if (!hasApiKey) {
+    return res.status(500).json({ error: 'Server is missing GROQ_API_KEY — set it in backend/.env.' });
+  }
+  try {
+    const fact = await draftYogaFact();
+    await sendTelegramMessage(fact);
+    return res.json({ sent: true, fact });
+  } catch (err) {
+    console.error('Manual Telegram fact send failed:', err.message || err);
+    return res.status(502).json({ error: 'Could not send the fact — check server logs.' });
+  }
+});
+
 const PORT = process.env.PORT || 8787;
 app.listen(PORT, () => {
   console.log(`YogaPedia v2 API proxy listening on http://localhost:${PORT}`);
   startWeeklySummaryScheduler();
+  startDailyFactScheduler();
 });
